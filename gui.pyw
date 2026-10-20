@@ -49,6 +49,30 @@ class UiQueue:
         self.root.after(80, self._poll)
 
 
+def near_pointer(w, h, offset=16):
+    """Top-left corner for a w x h window just below-right of the mouse, kept inside that
+    monitor's work area (so it never lands off-screen or under the taskbar)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                    ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+
+    pt = wintypes.POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    info = MONITORINFO(cbSize=ctypes.sizeof(MONITORINFO))
+    monitor = ctypes.windll.user32.MonitorFromPoint(pt, 2)  # 2 = nearest monitor
+    ctypes.windll.user32.GetMonitorInfoW(monitor, ctypes.byref(info))
+    work = info.rcWork
+    x, y = pt.x + offset, pt.y + offset
+    if x + w > work.right:
+        x = pt.x - w - offset  # no room on the right: open to the left of the mouse
+    if y + h > work.bottom:
+        y = pt.y - h - offset  # no room below: open above the mouse
+    return max(work.left, min(x, work.right - w)), max(work.top, min(y, work.bottom - h))
+
+
 def show_in_folder(path):
     subprocess.Popen(["explorer", "/select,", str(path)])
 
@@ -89,11 +113,12 @@ def quick_convert(target, path):
     buttons = ttk.Frame(frame)
     buttons.pack(fill="x", pady=(12, 0))
 
-    # bottom-right corner, staggered so several right-click conversions don't sit on top of each other
+    # Next to the mouse (where you right-clicked), staggered so several conversions don't stack exactly.
     root.update_idletasks()
     w, h = 400, root.winfo_reqheight() + 40
     slot = os.getpid() % 5
-    root.geometry(f"{w}x{h}+{root.winfo_screenwidth() - w - 24}+{root.winfo_screenheight() - h - 72 - slot * (h + 8)}")
+    x, y = near_pointer(w, h, offset=16 + slot * 28)
+    root.geometry(f"{w}x{h}+{x}+{y}")
 
     def finished(saved=None, error=None):
         bar.stop()
